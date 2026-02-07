@@ -5,6 +5,7 @@ import PedidoList from "./components/lists/PedidoList";
 import TransacaoList from "./components/lists/TransacaoList";
 import StatsCard from "./components/dashboard/StatsCard";
 import Modal from "./components/ui/Modal";
+import { gerarRelatorioCompletoPDF } from "./services/reportService";
 import LucroChart from "./components/dashboard/LucroChart";
 import {
   getPedidos,
@@ -20,6 +21,24 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState(""); // pedido | despesa | pagamento
   const [pedidoParaPagar, setPedidoParaPagar] = useState(null);
+  const [mes, setMes] = useState(new Date().getMonth() + 1);
+  const [ano, setAno] = useState(new Date().getFullYear());
+  const [clienteFiltro, setClienteFiltro] = useState("");
+  const filtrarPorPeriodoECliente = (lista) => {
+  return lista.filter((item) => {
+    const data = new Date(item.data);
+    const mesmoMes = data.getMonth() + 1 === mes;
+    const mesmoAno = data.getFullYear() === ano;
+    const mesmoCliente = clienteFiltro
+      ? item.cliente?.toLowerCase().includes(clienteFiltro.toLowerCase())
+      : true;
+
+    return mesmoMes && mesmoAno && mesmoCliente;
+  });
+};
+const pedidosFiltrados = filtrarPorPeriodoECliente(pedidos);
+const transacoesFiltradas = filtrarPorPeriodoECliente(transacoes);
+
 
   // ---------- LOAD ----------
   useEffect(() => {
@@ -48,17 +67,33 @@ export default function App() {
   const lucro = receita - despesa;
 
   // ---------- HANDLERS ----------
-  const handleAddPedido = (pedido) => {
-    setPedidos((prev) => [...prev, pedido]);
-    setIsModalOpen(false);
+// ---------- HANDLERS ----------
+const handleAddPedido = (pedido) => {
+  const novoPedido = {
+    ...pedido,
+    id: Date.now(),
+    tipo: "pedido",
+    data: new Date().toISOString(),
   };
 
-  const handleAddDespesa = (transacao) => {
-    setTransacoes((prev) => [...prev, transacao]);
-    setIsModalOpen(false);
+  setPedidos((prev) => [...prev, novoPedido]);
+  setIsModalOpen(false);
+};
+
+const handleAddDespesa = (transacao) => {
+  const novaDespesa = {
+    ...transacao,
+    id: Date.now(),
+    tipo: "despesa",
+    data: new Date().toISOString(),
   };
 
-  // 🔥 Abre modal Pix / Dinheiro
+  setTransacoes((prev) => [...prev, novaDespesa]);
+  setIsModalOpen(false);
+};
+
+
+  // 🔥 Abre modal Pix / Dinheiro / Cheque
   const handlePagarPedido = (id) => {
     const pedido = pedidos.find((p) => p.id === id);
     if (!pedido) return;
@@ -75,12 +110,11 @@ export default function App() {
     const novaReceita = {
       id: Date.now(),
       cliente: pedidoParaPagar.cliente,
-      cpf: pedidoParaPagar.cpf,
       descricao: pedidoParaPagar.descricao,
       valor: Number(pedidoParaPagar.valor),
       tipo: "receita",
       formaPagamento,
-      data: new Date().toISOString().split("T")[0],
+      data: new Date().toISOString(),
     };
 
     setTransacoes((prev) => [...prev, novaReceita]);
@@ -160,6 +194,48 @@ export default function App() {
         ))}
       </div>
 
+      <div className="flex flex-wrap gap-2 justify-center mb-4">
+  {/* Mês */}
+  <select
+    value={mes}
+    onChange={(e) => setMes(Number(e.target.value))}
+    className="border px-2 py-1 rounded"
+  >
+    {[...Array(12)].map((_, i) => (
+      <option key={i + 1} value={i + 1}>
+        {String(i + 1).padStart(2, "0")}
+      </option>
+    ))}
+  </select>
+
+  {/* Ano */}
+  <input
+    type="number"
+    value={ano}
+    onChange={(e) => setAno(Number(e.target.value))}
+    className="border px-2 py-1 rounded w-24"
+  />
+
+  {/* Cliente */}
+  <input
+    type="text"
+    placeholder="Cliente (opcional)"
+    value={clienteFiltro}
+    onChange={(e) => setClienteFiltro(e.target.value)}
+    className="border px-2 py-1 rounded"
+  />
+</div>
+
+
+      <div className="flex justify-center mb-4">
+        <button
+          onClick={() => gerarRelatorioCompletoPDF(pedidos, transacoes, mes, ano, clienteFiltro)}
+          className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+        >
+          Gerar Relatório PDF
+        </button>
+      </div>
+
       {/* Listas */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <PedidoList
@@ -167,7 +243,9 @@ export default function App() {
           onPagar={handlePagarPedido}
           onExcluir={handleExcluirPedido}
         />
-        <TransacaoList transacoes={filteredTransacoes} />
+        <TransacaoList   transacoes={filteredTransacoes}onExcluir={(id) =>
+    setTransacoes(transacoes.filter((t) => t.id !== id))
+  } />
       </div>
 
       {/* Modal */}
@@ -199,6 +277,12 @@ export default function App() {
                 onClick={() => confirmarPagamento("Dinheiro")}
               >
                 Dinheiro
+              </button>
+              <button
+                className="px-4 py-2 bg-yellow-500 text-white rounded"
+                onClick={() => confirmarPagamento("Cheque")}
+              >
+                Cheque
               </button>
             </div>
           </div>
