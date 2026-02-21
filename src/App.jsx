@@ -1,12 +1,23 @@
 import { useEffect, useState } from "react";
+
+// Forms
 import PedidoForm from "./components/forms/PedidoForm";
 import TransacaoForm from "./components/forms/TransacaoForm";
+
+// Lists
 import PedidoList from "./components/lists/PedidoList";
 import TransacaoList from "./components/lists/TransacaoList";
+
+// Dashboard
 import StatsCard from "./components/dashboard/StatsCard";
-import Modal from "./components/ui/Modal";
-import { gerarRelatorioCompletoPDF } from "./services/reportService";
 import LucroChart from "./components/dashboard/LucroChart";
+
+// UI
+import Modal from "./components/ui/Modal";
+
+// Services
+import { gerarRelatorioCompletoPDF } from "./services/reportService";
+import { salvarNoSheets, API_URL } from "./services/api";
 import {
   getPedidos,
   savePedidos,
@@ -15,30 +26,77 @@ import {
 } from "./services/storage";
 
 export default function App() {
+  // ---------- STATES ----------
   const [pedidos, setPedidos] = useState([]);
   const [transacoes, setTransacoes] = useState([]);
+
   const [filter, setFilter] = useState("todos");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState(""); // pedido | despesa | pagamento
   const [pedidoParaPagar, setPedidoParaPagar] = useState(null);
+
   const [mes, setMes] = useState(new Date().getMonth() + 1);
   const [ano, setAno] = useState(new Date().getFullYear());
   const [clienteFiltro, setClienteFiltro] = useState("");
+
+useEffect(() => {
+  fetch(API_URL)
+    .then(res => res.json())
+    .then(data => {
+
+      const mapPedidos = data.pedidos.slice(1).map(l => ({
+        id: l[0],
+        cliente: l[1],
+        descricao: l[2],
+        valor: Number(l[3]),
+        status: l[4],
+        tipo: l[5],
+        data: l[6],
+      })) .filter(p => p.status === "Pendente");
+
+      const mapReceitas = data.receitas.slice(1).map(l => ({
+        id: l[0],
+        cliente: l[1],
+        descricao: l[2],
+        valor: Number(l[3]),
+        formaPgto: l[7],
+        tipo: l[5],
+        data: l[6],
+      }));
+
+      const mapDespesas = data.despesas.slice(1).map(l => ({
+        id: l[0],
+        descricao: l[1],
+        valor: Number(l[2]),
+        tipo: l[3],
+        data: l[4],
+      }));
+
+      setPedidos(mapPedidos);
+      setTransacoes([...mapReceitas, ...mapDespesas]);
+
+    })
+    .catch(err => console.error("Erro ao carregar dados:", err));
+}, []);
+
+
+
+  // ---------- FILTRO POR PERÍODO ----------
   const filtrarPorPeriodoECliente = (lista) => {
-  return lista.filter((item) => {
-    const data = new Date(item.data);
-    const mesmoMes = data.getMonth() + 1 === mes;
-    const mesmoAno = data.getFullYear() === ano;
-    const mesmoCliente = clienteFiltro
-      ? item.cliente?.toLowerCase().includes(clienteFiltro.toLowerCase())
-      : true;
+    return lista.filter((item) => {
+      const data = new Date(item.data);
+      const mesmoMes = data.getMonth() + 1 === mes;
+      const mesmoAno = data.getFullYear() === ano;
+      const mesmoCliente = clienteFiltro
+        ? item.cliente?.toLowerCase().includes(clienteFiltro.toLowerCase())
+        : true;
 
-    return mesmoMes && mesmoAno && mesmoCliente;
-  });
-};
-const pedidosFiltrados = filtrarPorPeriodoECliente(pedidos);
-const transacoesFiltradas = filtrarPorPeriodoECliente(transacoes);
+      return mesmoMes && mesmoAno && mesmoCliente;
+    });
+  };
 
+  const pedidosFiltrados = filtrarPorPeriodoECliente(pedidos);
+  const transacoesFiltradas = filtrarPorPeriodoECliente(transacoes);
 
   // ---------- LOAD ----------
   useEffect(() => {
@@ -67,31 +125,31 @@ const transacoesFiltradas = filtrarPorPeriodoECliente(transacoes);
   const lucro = receita - despesa;
 
   // ---------- HANDLERS ----------
-// ---------- HANDLERS ----------
-const handleAddPedido = (pedido) => {
-  const novoPedido = {
-    ...pedido,
-    id: Date.now(),
-    tipo: "pedido",
-    data: new Date().toISOString(),
+  const handleAddPedido = (pedido) => {
+    const novoPedido = {
+      ...pedido,
+      id: Date.now(),
+      tipo: "pedido",
+      data: new Date().toISOString(),
+    };
+
+    setPedidos((prev) => [...prev, novoPedido]);
+    salvarNoSheets({tipo: "pedido", dados: novoPedido,});
+    setIsModalOpen(false);
   };
 
-  setPedidos((prev) => [...prev, novoPedido]);
-  setIsModalOpen(false);
-};
+  const handleAddDespesa = (transacao) => {
+    const novaDespesa = {
+      ...transacao,
+      id: Date.now(),
+      tipo: "despesa",
+      data: new Date().toISOString(),
+    };
 
-const handleAddDespesa = (transacao) => {
-  const novaDespesa = {
-    ...transacao,
-    id: Date.now(),
-    tipo: "despesa",
-    data: new Date().toISOString(),
+    setTransacoes((prev) => [...prev, novaDespesa]);
+    salvarNoSheets({ tipo: "despesa", dados: novaDespesa });
+    setIsModalOpen(false);
   };
-
-  setTransacoes((prev) => [...prev, novaDespesa]);
-  setIsModalOpen(false);
-};
-
 
   // 🔥 Abre modal Pix / Dinheiro / Cheque
   const handlePagarPedido = (id) => {
@@ -102,13 +160,14 @@ const handleAddDespesa = (transacao) => {
     setModalType("pagamento");
     setIsModalOpen(true);
   };
+  
 
   // 🔥 Confirma pagamento
   const confirmarPagamento = (formaPagamento) => {
     if (!pedidoParaPagar) return;
 
     const novaReceita = {
-      id: Date.now(),
+      ...pedidoParaPagar,
       cliente: pedidoParaPagar.cliente,
       descricao: pedidoParaPagar.descricao,
       valor: Number(pedidoParaPagar.valor),
@@ -122,6 +181,7 @@ const handleAddDespesa = (transacao) => {
       prev.filter((p) => p.id !== pedidoParaPagar.id)
     );
 
+    salvarNoSheets({tipo: "receita", dados: novaReceita,});
     setPedidoParaPagar(null);
     setIsModalOpen(false);
   };
@@ -148,6 +208,7 @@ const handleAddDespesa = (transacao) => {
       {/* Cabeçalho */}
       <div className="flex justify-between items-center flex-wrap gap-2">
         <h1 className="text-2xl font-bold">Painel Financeiro</h1>
+
         <div className="flex gap-2">
           <button
             className="px-4 py-2 bg-blue-500 text-white rounded"
@@ -158,6 +219,7 @@ const handleAddDespesa = (transacao) => {
           >
             Novo Pedido
           </button>
+
           <button
             className="px-4 py-2 bg-red-500 text-white rounded"
             onClick={() => {
@@ -194,42 +256,48 @@ const handleAddDespesa = (transacao) => {
         ))}
       </div>
 
+      {/* Período */}
       <div className="flex flex-wrap gap-2 justify-center mb-4">
-  {/* Mês */}
-  <select
-    value={mes}
-    onChange={(e) => setMes(Number(e.target.value))}
-    className="border px-2 py-1 rounded"
-  >
-    {[...Array(12)].map((_, i) => (
-      <option key={i + 1} value={i + 1}>
-        {String(i + 1).padStart(2, "0")}
-      </option>
-    ))}
-  </select>
+        <select
+          value={mes}
+          onChange={(e) => setMes(Number(e.target.value))}
+          className="border px-2 py-1 rounded"
+        >
+          {[...Array(12)].map((_, i) => (
+            <option key={i + 1} value={i + 1}>
+              {String(i + 1).padStart(2, "0")}
+            </option>
+          ))}
+        </select>
 
-  {/* Ano */}
-  <input
-    type="number"
-    value={ano}
-    onChange={(e) => setAno(Number(e.target.value))}
-    className="border px-2 py-1 rounded w-24"
-  />
+        <input
+          type="number"
+          value={ano}
+          onChange={(e) => setAno(Number(e.target.value))}
+          className="border px-2 py-1 rounded w-24"
+        />
 
-  {/* Cliente */}
-  <input
-    type="text"
-    placeholder="Cliente (opcional)"
-    value={clienteFiltro}
-    onChange={(e) => setClienteFiltro(e.target.value)}
-    className="border px-2 py-1 rounded"
-  />
-</div>
+        <input
+          type="text"
+          placeholder="Cliente (opcional)"
+          value={clienteFiltro}
+          onChange={(e) => setClienteFiltro(e.target.value)}
+          className="border px-2 py-1 rounded"
+        />
+      </div>
 
-
+      {/* Relatório */}
       <div className="flex justify-center mb-4">
         <button
-          onClick={() => gerarRelatorioCompletoPDF(pedidos, transacoes, mes, ano, clienteFiltro)}
+          onClick={() =>
+            gerarRelatorioCompletoPDF(
+              pedidos,
+              transacoes,
+              mes,
+              ano,
+              clienteFiltro
+            )
+          }
           className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
         >
           Gerar Relatório PDF
@@ -243,24 +311,24 @@ const handleAddDespesa = (transacao) => {
           onPagar={handlePagarPedido}
           onExcluir={handleExcluirPedido}
         />
-        <TransacaoList   transacoes={filteredTransacoes}onExcluir={(id) =>
-    setTransacoes(transacoes.filter((t) => t.id !== id))
-  } />
+
+        <TransacaoList
+          transacoes={filteredTransacoes}
+          onExcluir={(id) =>
+            setTransacoes(transacoes.filter((t) => t.id !== id))
+          }
+        />
       </div>
 
       {/* Modal */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
-        {modalType === "pedido" && (
-          <PedidoForm onAdd={handleAddPedido} />
-        )}
-
-        {modalType === "despesa" && (
-          <TransacaoForm onAdd={handleAddDespesa} />
-        )}
+        {modalType === "pedido" && <PedidoForm onAdd={handleAddPedido} />}
+        {modalType === "despesa" && <TransacaoForm onAdd={handleAddDespesa} />}
 
         {modalType === "pagamento" && pedidoParaPagar && (
           <div className="space-y-4 text-center">
             <h2 className="text-lg font-bold">Forma de Pagamento</h2>
+
             <p>
               Pedido de <strong>{pedidoParaPagar.cliente}</strong>
             </p>
@@ -272,12 +340,14 @@ const handleAddDespesa = (transacao) => {
               >
                 Pix
               </button>
+
               <button
                 className="px-4 py-2 bg-blue-500 text-white rounded"
                 onClick={() => confirmarPagamento("Dinheiro")}
               >
                 Dinheiro
               </button>
+
               <button
                 className="px-4 py-2 bg-yellow-500 text-white rounded"
                 onClick={() => confirmarPagamento("Cheque")}

@@ -1,3 +1,5 @@
+import { excluirDoSheets } from "../../services/api";
+
 export default function PedidoList({ pedidos, onPagar, onExcluir }) {
   if (!pedidos.length) {
     return <p className="text-center">Nenhum pedido</p>;
@@ -6,6 +8,11 @@ export default function PedidoList({ pedidos, onPagar, onExcluir }) {
   const formatarData = (data) => {
     if (!data) return "-";
     return new Date(data).toLocaleDateString("pt-BR");
+  };
+
+  const handleExcluir = async (id) => {
+    await excluirDoSheets(id, "Pedidos"); // 🔥 Exclui no Sheets
+    onExcluir(id); // 🔥 Atualiza a tela
   };
 
   return (
@@ -39,7 +46,7 @@ export default function PedidoList({ pedidos, onPagar, onExcluir }) {
               </button>
               <button
                 className="bg-red-500 text-white px-2 rounded"
-                onClick={() => onExcluir(p.id)}
+                onClick={() => handleExcluir(p.id)}
               >
                 Excluir
               </button>
